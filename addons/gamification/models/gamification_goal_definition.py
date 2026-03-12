@@ -53,7 +53,7 @@ class GamificationGoalDefinition(models.Model):
     batch_mode = fields.Boolean("Batch Mode", help="Evaluate the expression in batch instead of once for each user")
     batch_distinctive_field = fields.Many2one('ir.model.fields', string="Distinctive field for batch user", help="In batch mode, this indicates which field distinguishes one user from the other, e.g. user_id, partner_id...")
     batch_user_expression = fields.Char("Evaluated expression for batch mode", help="The value to compare with the distinctive field. The expression can contain reference to 'user' which is a browse record of the current user, e.g. user.id, user.partner_id.id...")
-    compute_code = fields.Text("Python Code", help="Python code to be executed for each user. 'result' should contains the new current value. Evaluated user can be access through object.user_id.")
+    compute_code = fields.Text("Python Code", groups="base.group_system", help="Python code to be executed for each user. 'result' should contains the new current value. Evaluated user can be access through object.user_id.")
     condition = fields.Selection([
         ('higher', "The higher the better"),
         ('lower', "The lower the better")

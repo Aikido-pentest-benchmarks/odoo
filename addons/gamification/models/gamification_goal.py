@@ -153,9 +153,12 @@ class GamificationGoal(models.Model):
                 # TODO batch execution
                 for goal in goals:
                     # execute the chosen method
+                    # Note: 'env' is intentionally not provided to prevent access to
+                    # the database cursor and ORM methods that could be abused for
+                    # SQL injection or unauthorized data access
                     cxt = {
                         'object': goal,
-                        'env': self.env,
+                        'user': goal.user_id,
 
                         'date': date,
                         'datetime': datetime,
