@@ -90,7 +90,7 @@ class HrAttendance(http.Controller):
     def get_employees_without_badge(self, token, name=None, limit=20):
         """Fetch only employees without a badge (barcode)."""
         company = self._get_company(token)
-        if company:
+        if company and company.attendance_kiosk_mode in ('manual', 'barcode_manual'):
             domain = Domain([('barcode', '=', False), ('company_id', '=', company.id)])
             if name:
                 domain = Domain.AND([domain, [('name', 'ilike', name)]])
@@ -105,9 +105,9 @@ class HrAttendance(http.Controller):
     @http.route('/hr_attendance/set_badge', type='jsonrpc', auth='public')
     def set_badge(self, employee_id, badge, token):
         company = self._get_company(token)
-        if company:
+        if company and company.attendance_kiosk_mode in ('manual', 'barcode_manual'):
             employee = request.env['hr.employee'].browse(employee_id)
-            if employee:
+            if employee and employee.company_id == company:
                 employee.write({'barcode': badge})
                 return {'status': 'success'}
         return {}
@@ -115,7 +115,7 @@ class HrAttendance(http.Controller):
     @http.route('/hr_attendance/create_employee', type='jsonrpc', auth='public')
     def create_employee(self, name, token):
         company = self._get_company(token)
-        if company:
+        if company and company.attendance_kiosk_mode in ('manual', 'barcode_manual'):
             request.env["hr.employee"].create({
                 "name": name,
                 "company_id": company.id,
@@ -192,9 +192,14 @@ class HrAttendance(http.Controller):
     @http.route('/hr_attendance/manual_selection', type="jsonrpc", auth="public")
     def manual_selection(self, token, employee_id, pin_code, latitude=False, longitude=False):
         company = self._get_company(token)
-        if company:
+        if company and company.attendance_kiosk_mode in ('manual', 'barcode_manual'):
             employee = request.env['hr.employee'].sudo().browse(employee_id)
-            if employee.company_id == company and ((not company.attendance_kiosk_use_pin) or (employee.pin == pin_code)):
+            if employee.company_id == company:
+                # Enforce PIN validation: if PIN is enabled, require a valid PIN match
+                if company.attendance_kiosk_use_pin:
+                    if not pin_code or employee.pin != pin_code:
+                        return {}
+                # If PIN is not enabled, allow access without PIN
                 employee.sudo()._attendance_action_change(self._get_geoip_response('kiosk', latitude=latitude, longitude=longitude, device_tracking_enabled=company.attendance_device_tracking))
                 return self._get_employee_info_response(employee)
         return {}
@@ -202,7 +207,7 @@ class HrAttendance(http.Controller):
     @http.route('/hr_attendance/employees_infos', type="jsonrpc", auth="public")
     def employees_infos(self, token, limit, offset, domain):
         company = self._get_company(token)
-        if company:
+        if company and company.attendance_kiosk_mode in ('manual', 'barcode_manual'):
             domain = Domain(domain) & Domain('company_id', '=', company.id)
             employees = request.env['hr.employee'].sudo().search_fetch(domain, ['id', 'display_name', 'job_id'],
                 limit=limit, offset=offset, order="name, id")
@@ -249,4 +254,4 @@ class HrAttendance(http.Controller):
     def set_attendance_settings(self, token, mode):
         company = self._get_company(token)
         if company:
-            request.env.user.company_id.attendance_kiosk_mode = mode
+            company.sudo().attendance_kiosk_mode = mode
