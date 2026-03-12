@@ -775,8 +775,87 @@ class Website(Home):
                 result.append(group)
         return result
 
+    def _validate_view_arch_security(self, arch):
+        """
+        Validate view architecture for dangerous HTML constructs that could lead to XSS.
+        
+        This method checks for:
+        - Inline event handlers (onclick, onerror, onload, etc.)
+        - <script> tags
+        - javascript: protocol in attributes
+        
+        QWeb directives (t-*, data-*, etc.) are allowed as they are part of the template engine.
+        
+        :param arch: The view architecture XML/HTML string to validate
+        :raises UserError: If dangerous constructs are detected
+        """
+        if not arch:
+            return
+        
+        try:
+            # Parse the arch to check for dangerous constructs
+            arch_tree = etree.fromstring(arch.encode('utf-8') if isinstance(arch, str) else arch)
+        except etree.XMLSyntaxError:
+            # If parsing fails, let the normal validation handle it
+            return
+        
+        # Define dangerous patterns
+        # Event handler attributes (case-insensitive)
+        event_handlers = [
+            'onabort', 'onblur', 'onchange', 'onclick', 'ondblclick', 'onerror',
+            'onfocus', 'onkeydown', 'onkeypress', 'onkeyup', 'onload', 'onmousedown',
+            'onmousemove', 'onmouseout', 'onmouseover', 'onmouseup', 'onreset',
+            'onresize', 'onselect', 'onsubmit', 'onunload', 'onafterprint',
+            'onbeforeprint', 'onbeforeunload', 'onhashchange', 'onmessage',
+            'onoffline', 'ononline', 'onpagehide', 'onpageshow', 'onpopstate',
+            'onstorage', 'ontouchstart', 'ontouchend', 'ontouchmove', 'ontouchcancel',
+            'onpointerdown', 'onpointerup', 'onpointermove', 'onpointerover',
+            'onpointerout', 'onpointerenter', 'onpointerleave', 'onpointercancel',
+            'ongotpointercapture', 'onlostpointercapture', 'onanimationstart',
+            'onanimationend', 'onanimationiteration', 'ontransitionend',
+        ]
+        
+        # Check all elements in the tree
+        for element in arch_tree.iter():
+            # Skip comments and processing instructions
+            if not isinstance(element.tag, str):
+                continue
+            
+            # Check for <script> tags
+            if element.tag.lower() == 'script':
+                raise UserError(_(
+                    "Security Error: <script> tags are not allowed in view templates. "
+                    "Please remove the script tag and use proper Odoo/QWeb mechanisms instead."
+                ))
+            
+            # Check all attributes of the element
+            for attr_name, attr_value in element.attrib.items():
+                attr_name_lower = attr_name.lower()
+                
+                # Check for event handler attributes
+                if attr_name_lower in event_handlers:
+                    raise UserError(_(
+                        "Security Error: Inline event handler '%(attr)s' is not allowed in view templates. "
+                        "Event handlers can lead to Cross-Site Scripting (XSS) vulnerabilities. "
+                        "Please use proper Odoo/QWeb mechanisms or JavaScript assets instead.",
+                        attr=attr_name
+                    ))
+                
+                # Check for javascript: protocol in href, src, action, formaction, data attributes
+                if attr_value and isinstance(attr_value, str):
+                    attr_value_lower = attr_value.lower().strip()
+                    if attr_value_lower.startswith('javascript:'):
+                        raise UserError(_(
+                            "Security Error: 'javascript:' protocol in attribute '%(attr)s' is not allowed. "
+                            "This can lead to Cross-Site Scripting (XSS) vulnerabilities. "
+                            "Please use proper Odoo/QWeb mechanisms instead.",
+                            attr=attr_name
+                        ))
+
     @http.route('/website/save_xml', type='jsonrpc', auth='user', website=True)
     def save_xml(self, view_id, arch):
+        # Validate arch for dangerous HTML constructs to prevent XSS
+        self._validate_view_arch_security(arch)
         request.env['ir.ui.view'].browse(view_id).with_context(
             lang=request.website.default_lang_id.code,
             delay_translations=True,
