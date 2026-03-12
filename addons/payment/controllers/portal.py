@@ -346,6 +346,9 @@ class PaymentPortal(portal.CustomerPortal):
                 validation_pm=payment_method  # Will be converted to a kwarg in master.
             )._get_validation_currency().id
 
+        # Sanitize the landing route to prevent XSS attacks
+        sanitized_landing_route = PaymentPortal._sanitize_landing_route(landing_route)
+
         # Create the transaction
         tx_sudo = request.env['payment.transaction'].sudo().create({
             'provider_id': provider_sudo.id,
@@ -357,7 +360,7 @@ class PaymentPortal(portal.CustomerPortal):
             'token_id': token_id,
             'operation': f'online_{flow}' if not is_validation else 'validation',
             'tokenize': tokenize,
-            'landing_route': landing_route,
+            'landing_route': sanitized_landing_route,
             **(custom_create_values or {}),
         })  # In sudo mode to allow writing on callback fields
 
@@ -370,6 +373,34 @@ class PaymentPortal(portal.CustomerPortal):
         PaymentPostProcessing.monitor_transaction(tx_sudo)
 
         return tx_sudo
+
+    @staticmethod
+    def _sanitize_landing_route(landing_route):
+        """ Sanitize the landing route to prevent XSS attacks via javascript: or data: URLs.
+
+        This method ensures that the landing route is a safe, local path by stripping any scheme
+        (e.g., javascript:, data:, http:, https:) and network location to prevent malicious
+        redirects or script execution.
+
+        :param str landing_route: The landing route to sanitize.
+        :return: The sanitized landing route as a local path.
+        :rtype: str
+        """
+        if not landing_route:
+            return landing_route
+        # Parse the URL and strip scheme and netloc to ensure it's a local path
+        parsed_url = urllib.parse.urlparse(landing_route)
+        # Reconstruct as a local path without scheme or netloc
+        sanitized = urllib.parse.urlunparse((
+            '',  # scheme
+            '',  # netloc
+            parsed_url.path,
+            parsed_url.params,
+            parsed_url.query,
+            parsed_url.fragment
+        ))
+        # Ensure the path starts with '/' and remove any leading backslashes
+        return '/' + sanitized.lstrip('/\\')
 
     @staticmethod
     def _update_landing_route(tx_sudo, access_token):
