@@ -29,7 +29,8 @@ class Database(http.Controller):
 
     def _render_template(self, **d):
         d.setdefault('manage', True)
-        d['insecure'] = odoo.tools.config.verify_admin_password('admin')
+        # Check if the stored password is the insecure default 'admin'
+        d['insecure'] = odoo.tools.config['admin_passwd'] == 'admin'
         d['list_db'] = odoo.tools.config['list_db']
         d['langs'] = odoo.service.db.exp_list_lang()
         d['countries'] = odoo.service.db.exp_list_countries()
@@ -70,8 +71,9 @@ class Database(http.Controller):
 
     @http.route('/web/database/create', type='http', auth="none", methods=['POST'], csrf=False)
     def create(self, master_pwd, name, lang, password, **post):
-        insecure = odoo.tools.config.verify_admin_password('admin')
+        insecure = odoo.tools.config['admin_passwd'] == 'admin'
         if insecure and master_pwd:
+            # Allow setting a new password when the default is still in place
             dispatch_rpc('db', 'change_admin_password', ["admin", master_pwd])
         try:
             if not re.match(DBNAME_PATTERN, name):
@@ -93,8 +95,9 @@ class Database(http.Controller):
 
     @http.route('/web/database/duplicate', type='http', auth="none", methods=['POST'], csrf=False)
     def duplicate(self, master_pwd, name, new_name, neutralize_database=False):
-        insecure = odoo.tools.config.verify_admin_password('admin')
+        insecure = odoo.tools.config['admin_passwd'] == 'admin'
         if insecure and master_pwd:
+            # Allow setting a new password when the default is still in place
             dispatch_rpc('db', 'change_admin_password', ["admin", master_pwd])
         try:
             if not re.match(DBNAME_PATTERN, new_name):
@@ -110,8 +113,9 @@ class Database(http.Controller):
 
     @http.route('/web/database/drop', type='http', auth="none", methods=['POST'], csrf=False)
     def drop(self, master_pwd, name):
-        insecure = odoo.tools.config.verify_admin_password('admin')
+        insecure = odoo.tools.config['admin_passwd'] == 'admin'
         if insecure and master_pwd:
+            # Allow setting a new password when the default is still in place
             dispatch_rpc('db', 'change_admin_password', ["admin", master_pwd])
         try:
             dispatch_rpc('db', 'drop', [master_pwd, name])
@@ -126,8 +130,9 @@ class Database(http.Controller):
     @http.route('/web/database/backup', type='http', auth="none", methods=['POST'], csrf=False)
     def backup(self, master_pwd, name, backup_format='zip', filestore=True):
         filestore = str2bool(filestore)
-        insecure = odoo.tools.config.verify_admin_password('admin')
+        insecure = odoo.tools.config['admin_passwd'] == 'admin'
         if insecure and master_pwd:
+            # Allow setting a new password when the default is still in place
             dispatch_rpc('db', 'change_admin_password', ["admin", master_pwd])
         try:
             odoo.service.db.check_super(master_pwd)
@@ -149,8 +154,9 @@ class Database(http.Controller):
 
     @http.route('/web/database/restore', type='http', auth="none", methods=['POST'], csrf=False, max_content_length=None)
     def restore(self, master_pwd, backup_file, name, copy=False, neutralize_database=False):
-        insecure = odoo.tools.config.verify_admin_password('admin')
+        insecure = odoo.tools.config['admin_passwd'] == 'admin'
         if insecure and master_pwd:
+            # Allow setting a new password when the default is still in place
             dispatch_rpc('db', 'change_admin_password', ["admin", master_pwd])
         try:
             data_file = None

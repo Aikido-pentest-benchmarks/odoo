@@ -515,6 +515,11 @@ def dispatch(method, params):
     elif exp_method_name in g:
         passwd = params[0]
         params = params[1:]
+        # Security: Reject the default 'admin' password except when changing it
+        stored_passwd = odoo.tools.config['admin_passwd']
+        if stored_passwd == 'admin' and passwd == 'admin' and method != 'change_admin_password':
+            _logger.error('Rejected database operation with insecure default master password')
+            raise odoo.exceptions.AccessDenied()
         check_super(passwd)
         return g[exp_method_name](*params)
     else:
