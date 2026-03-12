@@ -98,6 +98,7 @@ class IrHttp(models.AbstractModel):
             "uid": session_uid,
             "is_system": user._is_system() if session_uid else False,
             "is_admin": user._is_admin() if session_uid else False,
+            "is_superuser": user._is_superuser() if session_uid else False,
             "is_public": user._is_public(),
             "is_internal_user": is_internal_user,
             "user_context": user_context,
@@ -173,6 +174,7 @@ class IrHttp(models.AbstractModel):
         session_info = {
             'is_admin': user._is_admin() if session_uid else False,
             'is_system': user._is_system() if session_uid else False,
+            'is_superuser': user._is_superuser() if session_uid else False,
             'is_public': user._is_public(),
             "is_internal_user": user._is_internal(),
             'is_website_user': user._is_public() if session_uid else False,

@@ -35,7 +35,9 @@ export function regenerateAssets({ env }) {
 
 export function becomeSuperuser({ env }) {
     const becomeSuperuserURL = browser.location.origin + "/web/become";
-    if (!user.isAdmin) {
+    // Only show this option to actual superusers (uid=1), not just administrators
+    // This prevents UI exposure of privilege escalation path
+    if (!user.isSuperuser) {
         return false;
     }
     return {
