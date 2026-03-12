@@ -43,7 +43,7 @@ class TestImportModule(odoo.tests.TransactionCase):
     def test_import_zip(self):
         """Assert the behaviors expected by the module import feature using a ZIP archive"""
         files = [
-            ('foo/__manifest__.py', self.manifest_content(data=['data.xml', 'res.partner.csv', 'data.sql'])),
+            ('foo/__manifest__.py', self.manifest_content(data=['data.xml', 'res.partner.csv'])),
             ('foo/data.xml', b"""
                 <data>
                     <record id="foo" model="res.partner">
@@ -55,7 +55,6 @@ class TestImportModule(odoo.tests.TransactionCase):
                 b'"id","name"\n' \
                 b'bar,bar'
             ),
-            ('foo/data.sql', b"INSERT INTO res_currency (name, symbol, active) VALUES ('New Currency', 'NCU', TRUE);"),
             ('foo/static/src/css/style.css', b".foo{color: black;}"),
             ('foo/static/src/js/foo.js', b"console.log('foo')"),
             ('bar/__manifest__.py', self.manifest_content(data=['data.xml'])),
@@ -101,7 +100,6 @@ class TestImportModule(odoo.tests.TransactionCase):
         self.assertEqual(self.env.ref('foo.foo').name, 'foo')
         self.assertEqual(self.env.ref('foo.bar')._name, 'res.partner')
         self.assertEqual(self.env.ref('foo.bar').name, 'bar')
-        self.assertEqual(self.env['res.currency'].search_count([('symbol', '=', 'NCU')]), 1)
 
         self.assertEqual(self.env.ref('bar.foo')._name, 'res.country')
         self.assertEqual(self.env.ref('bar.foo').name, 'foo')
@@ -166,6 +164,18 @@ class TestImportModule(odoo.tests.TransactionCase):
         with (
             mute_logger("odoo.addons.base_import_module.models.ir_module"),
             self.assertRaises(UserError, msg="modules with assets path containing glob wildcards shouldn't be successcully imported"),
+        ):
+            self.import_zipfile(files)
+
+    def test_import_zip_sql_file_blocked(self):
+        """Assert that SQL files are blocked in imported modules for security reasons"""
+        files = [
+            ('foo/__manifest__.py', self.manifest_content(data=['data.sql'])),
+            ('foo/data.sql', b"INSERT INTO res_currency (name, symbol, active) VALUES ('New Currency', 'NCU', TRUE);"),
+        ]
+        with (
+            mute_logger("odoo.addons.base_import_module.models.ir_module"),
+            self.assertRaises(UserError, msg="SQL files should be blocked in imported modules"),
         ):
             self.import_zipfile(files)
 

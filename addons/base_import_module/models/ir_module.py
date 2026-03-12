@@ -162,7 +162,16 @@ class IrModuleModule(models.Model):
         for kind in kind_of_files:
             for filename in terp.get(kind, []):
                 ext = os.path.splitext(filename)[1].lower()
-                if ext not in ('.xml', '.csv', '.sql'):
+                if ext == '.sql':
+                    # SQL files are not allowed in imported modules for security reasons
+                    # as they could be used to execute arbitrary SQL commands including
+                    # PostgreSQL COPY PROGRAM for remote code execution
+                    raise UserError(_(
+                        "Module '%(module)s' contains SQL file '%(filename)s'. "
+                        "SQL files are not allowed in imported modules for security reasons.",
+                        module=module, filename=filename
+                    ))
+                if ext not in ('.xml', '.csv'):
                     _logger.info("module %s: skip unsupported file %s", module, filename)
                     continue
                 _logger.info("module %s: loading %s", module, filename)
@@ -354,7 +363,15 @@ class IrModuleModule(models.Model):
                     if with_demo:
                         files_to_import += terp.get('demo', [])
                     for filename in files_to_import:
-                        if os.path.splitext(filename)[1].lower() not in ('.xml', '.csv', '.sql'):
+                        ext = os.path.splitext(filename)[1].lower()
+                        if ext == '.sql':
+                            # SQL files are not allowed in imported modules for security reasons
+                            raise UserError(_(
+                                "Module '%(module)s' contains SQL file '%(filename)s'. "
+                                "SQL files are not allowed in imported modules for security reasons.",
+                                module=mod_name, filename=filename
+                            ))
+                        if ext not in ('.xml', '.csv'):
                             continue
                         module_data_files[mod_name].append('%s/%s' % (mod_name, filename))
                     dependencies[mod_name] = terp.get('depends', [])
