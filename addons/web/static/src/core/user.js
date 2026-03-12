@@ -40,6 +40,7 @@ export function _makeUser(session) {
         is_admin: isAdmin,
         is_internal_user: isInternalUser,
         is_system: isSystem,
+        is_superuser: isSuperuser,
         is_public: isPublic,
         name,
         partner_id: partnerId,
@@ -103,6 +104,7 @@ export function _makeUser(session) {
     delete session.is_admin;
     delete session.is_internal_user;
     delete session.is_system;
+    delete session.is_superuser;
     delete session.name;
     delete session.partner_id;
     delete session.show_effect;
@@ -162,6 +164,7 @@ export function _makeUser(session) {
         login,
         isAdmin,
         isSystem,
+        isSuperuser,
         isInternalUser,
         partnerId,
         homeActionId,

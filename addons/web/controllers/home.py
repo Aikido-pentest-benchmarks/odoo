@@ -167,11 +167,19 @@ class Home(http.Controller):
     @http.route('/web/become', type='http', auth='user', sitemap=False, readonly=True)
     def switch_to_admin(self):
         uid = request.env.user.id
-        if request.env.user._is_system():
+        # Only allow superuser to "become" superuser (effectively a no-op)
+        # This prevents privilege escalation from Administrator to Superuser
+        if request.env.user._is_superuser():
             uid = request.session.uid = odoo.SUPERUSER_ID
             # invalidate session token cache as we've changed the uid
             request.env.registry.clear_cache()
             request.session.session_token = security.compute_session_token(request.session, request.env)
+        else:
+            # Log unauthorized attempt for security monitoring
+            _logger.warning(
+                'Unauthorized attempt to escalate privileges via /web/become by user %s (uid=%s)',
+                request.env.user.login, request.env.user.id
+            )
 
         return request.redirect(self._login_redirect(uid))
 
