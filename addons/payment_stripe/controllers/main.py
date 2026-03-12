@@ -188,12 +188,13 @@ class StripeController(http.Controller):
 
         :param payment.transaction tx_sudo: The sudoed transaction referenced by the payment data.
         :return: None
-        :raise Forbidden: If the timestamp is too old or if the signatures don't match.
+        :raise Forbidden: If the webhook secret is not configured, if the timestamp is too old,
+                         or if the signatures don't match.
         """
         webhook_secret = stripe_utils.get_webhook_secret(tx_sudo.provider_id)
         if not webhook_secret:
-            _logger.warning("ignored webhook event due to undefined webhook secret")
-            return
+            _logger.warning("rejected webhook event due to undefined webhook secret")
+            raise Forbidden()
 
         notification_payload = request.httprequest.data.decode('utf-8')
         signature_entries = request.httprequest.headers['Stripe-Signature'].split(',')
