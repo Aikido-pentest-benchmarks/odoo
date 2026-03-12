@@ -534,3 +534,39 @@ class TestImportModuleHttp(TestImportModule, odoo.tests.HttpCase):
             })
         dependencies_names = import_module.get_dependencies_to_install_names()
         self.assertEqual(dependencies_names, [])
+
+    def test_import_zip_slip_prevention(self):
+        """Assert that Zip Slip path traversal attacks are prevented"""
+        # Test case 1: Path traversal in static files
+        files = [
+            ('foo/__manifest__.py', self.manifest_content(data=['data.xml'])),
+            ('foo/data.xml', b'<data></data>'),
+            ('foo/static/../../../../tmp/malicious.txt', b'malicious content'),
+        ]
+        with (
+            mute_logger("odoo.addons.base_import_module.models.ir_module"),
+            self.assertRaises(UserError, msg="Path traversal in static files should be blocked"),
+        ):
+            self.import_zipfile(files)
+
+        # Test case 2: Path traversal in data files
+        files = [
+            ('foo/__manifest__.py', self.manifest_content(data=['../../../tmp/evil.xml'])),
+            ('foo/../../../tmp/evil.xml', b'<data></data>'),
+        ]
+        with (
+            mute_logger("odoo.addons.base_import_module.models.ir_module"),
+            self.assertRaises(UserError, msg="Path traversal in data files should be blocked"),
+        ):
+            self.import_zipfile(files)
+
+        # Test case 3: Path traversal in translation files
+        files = [
+            ('foo/__manifest__.py', self.manifest_content()),
+            ('foo/i18n/../../../../tmp/evil.po', b'malicious po file'),
+        ]
+        with (
+            mute_logger("odoo.addons.base_import_module.models.ir_module"),
+            self.assertRaises(UserError, msg="Path traversal in translation files should be blocked"),
+        ):
+            self.import_zipfile(files)

@@ -321,6 +321,35 @@ class IrModuleModule(models.Model):
 
         return True
 
+    def _safe_extract_member(self, zip_file, member, target_dir):
+        """
+        Safely extract a zip member, preventing path traversal attacks (Zip Slip).
+        
+        :param zip_file: ZipFile object
+        :param member: ZipInfo object to extract
+        :param target_dir: Target directory for extraction
+        :raises UserError: If the member path attempts to traverse outside the target directory
+        :return: The path to the extracted file
+        """
+        # Normalize the target directory path
+        target_dir = os.path.realpath(target_dir)
+        
+        # Get the intended extraction path
+        member_path = os.path.join(target_dir, member.filename)
+        
+        # Normalize and resolve the member path
+        normalized_path = os.path.realpath(member_path)
+        
+        # Verify that the normalized path is within the target directory
+        if not normalized_path.startswith(target_dir + os.sep) and normalized_path != target_dir:
+            raise UserError(_(
+                "Illegal path in zip file: '%(filename)s' attempts to write outside the target directory.",
+                filename=member.filename
+            ))
+        
+        # Extract the member safely
+        return zip_file.extract(member, target_dir)
+
     @api.model
     def _import_zipfile(self, module_file, force=False, with_demo=False):
         if not self.env.is_admin():
@@ -346,7 +375,7 @@ class IrModuleModule(models.Model):
                 module_data_files = defaultdict(list)
                 dependencies = defaultdict(list)
                 for mod_name, manifest in manifest_files:
-                    _manifest_path = z.extract(manifest, module_dir)
+                    _manifest_path = self._safe_extract_member(z, manifest, module_dir)
                     terp = Manifest._from_path(opj(module_dir, mod_name), env=self.env)
                     if not terp:
                         continue
@@ -374,7 +403,7 @@ class IrModuleModule(models.Model):
                     is_static = filename.startswith('%s/static' % mod_name)
                     is_translation = filename.startswith('%s/i18n' % mod_name) and filename.endswith('.po')
                     if is_data_file or is_static or is_translation:
-                        z.extract(file, module_dir)
+                        self._safe_extract_member(z, file, module_dir)
 
                 for mod_name in sorted_dirs:
                     module_names.append(mod_name)
