@@ -102,6 +102,9 @@ class PaymentPortal(payment_portal.PaymentPortal):
         if not partner_sudo:
             return self._redirect_login()
 
+        # Sanitize exit_route to prevent XSS attacks
+        exit_route = payment_portal.PaymentPortal._sanitize_landing_route(exit_route)
+
         kwargs = {
             'pos_order_id': pos_order_sudo.id,
         }
@@ -176,6 +179,8 @@ class PaymentPortal(payment_portal.PaymentPortal):
         pos_order_sudo = self._check_order_access(pos_order_id, access_token)
         self._ensure_session_open(pos_order_sudo)
         exit_route = request.httprequest.args.get('exit_route')
+        # Sanitize exit_route to prevent XSS attacks
+        exit_route = payment_portal.PaymentPortal._sanitize_landing_route(exit_route)
         user_sudo = request.env.user
         if not pos_order_sudo.partner_id:
             user_sudo = pos_order_sudo.company_id._get_public_user()
@@ -257,6 +262,9 @@ class PaymentPortal(payment_portal.PaymentPortal):
         :rtype: str
         :raise: AccessError if the provided order or access token is invalid
         """
+        # Sanitize exit_route to prevent XSS attacks
+        exit_route = payment_portal.PaymentPortal._sanitize_landing_route(exit_route)
+        
         tx_id = self._cast_as_int(tx_id)
         rendering_context = {
             'state': 'error',
