@@ -1,0 +1,39 @@
+x-environment:
+  - name: EXTERNAL_URL
+    kind: public-url
+    container: odoo
+    port: 8069
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: PgOd9mK4nQ8vR2wL6tY1cB5hF0jD3sA7eX9zK2pM
+      POSTGRES_DB: odoo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d odoo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  odoo:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "54969:8069"
+    environment:
+      EXTERNAL_URL: http://127.0.0.1:54969
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: odoo
+      PGPASSWORD: PgOd9mK4nQ8vR2wL6tY1cB5hF0jD3sA7eX9zK2pM
+      PGDATABASE: odoo
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8069/web/health?db_server_status=1"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 600s
