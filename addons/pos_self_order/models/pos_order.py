@@ -134,6 +134,11 @@ class PosOrder(models.Model):
         if line[0] == Command.UNLINK and line[1] in existing_lines.ids:
             return [Command.UNLINK, line[1]]
         if line[0] == Command.CREATE or line[0] == Command.UPDATE:
+            # For UPDATE commands, verify that the line belongs to the current order
+            # to prevent cross-order line modification and reassignment
+            if line[0] == Command.UPDATE and line[1] not in existing_lines.ids:
+                return []
+            
             line_data = line[2]
 
             product = pos_config.env['product.product'].browse(line_data.get('product_id'))
