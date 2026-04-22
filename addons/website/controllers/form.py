@@ -81,15 +81,24 @@ class WebsiteForm(http.Controller):
                 # for the email queue to process
 
                 if model_name == 'mail.mail':
+                    # Validate signature for all mail.mail submissions to prevent
+                    # unauthorized email sending via arbitrary CC/BCC recipients
+                    if not kwargs.get("email_to"):
+                        # email_to is required for mail.mail forms to ensure
+                        # recipient integrity can be validated
+                        raise AccessDenied(_('email_to is required for mail.mail forms'))
+                    
                     form_has_email_cc = {'email_cc', 'email_bcc'} & kwargs.keys() or \
                         'email_cc' in kwargs["website_form_signature"]
                     # remove the email_cc information from the signature
                     kwargs["website_form_signature"] = kwargs["website_form_signature"].split(':')[0]
-                    if kwargs.get("email_to"):
-                        value = kwargs['email_to'] + (':email_cc' if form_has_email_cc else '')
-                        hash_value = hmac(model_record.env, 'website_form_signature', value)
-                        if not consteq(kwargs["website_form_signature"], hash_value):
-                            raise AccessDenied(self.env._('invalid website_form_signature'))
+                    
+                    # Always validate the signature for mail.mail submissions
+                    value = kwargs['email_to'] + (':email_cc' if form_has_email_cc else '')
+                    hash_value = hmac(model_record.env, 'website_form_signature', value)
+                    if not consteq(kwargs["website_form_signature"], hash_value):
+                        raise AccessDenied(_('invalid website_form_signature'))
+                    
                     request.env[model_name].sudo().browse(id_record).send()
 
         # Some fields have additional SQL constraints that we can't check generically
