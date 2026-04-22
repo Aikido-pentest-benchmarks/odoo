@@ -2709,8 +2709,14 @@ class IrQweb(models.AbstractModel):
 
             @returns dict
         """
-        if not atts.pop('__is_static_node', False) and (href := atts.get('href')) and MALICIOUS_SCHEMES(str(href)):
-            atts['href'] = ""
+        if not atts.pop('__is_static_node', False) and (href := atts.get('href')):
+            # Normalize href by removing ASCII whitespace and control characters
+            # to prevent obfuscation of malicious schemes (e.g., java\tscript:)
+            href_str = str(href)
+            # Remove all ASCII control characters and whitespace (0x00-0x20, 0x7F)
+            normalized_href = ''.join(char for char in href_str if ord(char) > 0x20 and ord(char) != 0x7F)
+            if MALICIOUS_SCHEMES(normalized_href):
+                atts['href'] = ""
         return atts
 
     def _get_field(self, record, field_name, expression, tagName, field_options, values):
