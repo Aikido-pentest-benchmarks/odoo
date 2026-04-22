@@ -3,6 +3,7 @@ import pytz
 import logging
 
 from odoo import api, fields, models, _
+from odoo.exceptions import AccessError
 from odoo.fields import Domain
 
 from .lunch_supplier import float_to_time
@@ -62,6 +63,28 @@ class LunchAlert(models.Model):
         'Notification time must be between 0 and 12',
     )
 
+    def _verify_cron_ownership(self):
+        """Verify that the cron_id belongs to this alert to prevent privilege escalation.
+        
+        This method checks that the cron's code references the current alert record,
+        ensuring that a malicious user cannot rebind cron_id to an arbitrary ir.cron
+        and then modify or delete it through sudo() operations.
+        """
+        self.ensure_one()
+        if not self.cron_id:
+            return True
+        
+        # Check if the cron's code references this specific alert record
+        expected_code_fragment = f"env['{self._name}'].browse([{self.id}])"
+        cron_code = self.cron_id.code or ''
+        
+        if expected_code_fragment not in cron_code:
+            raise AccessError(_(
+                "The scheduled action (cron) associated with this alert does not belong to it. "
+                "Modifying or deleting arbitrary scheduled actions is not allowed."
+            ))
+        return True
+
     @api.depends('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
     def _compute_available_today(self):
         today = fields.Date.context_today(self)
@@ -84,6 +107,9 @@ class LunchAlert(models.Model):
     def _sync_cron(self):
         """ Synchronise the related cron fields to reflect this alert """
         for alert in self:
+            # Verify ownership before modifying the cron with sudo()
+            alert._verify_cron_ownership()
+            
             alert = alert.with_context(tz=alert.tz)
 
             cron_required = (
@@ -144,12 +170,23 @@ class LunchAlert(models.Model):
         return alerts
 
     def write(self, vals):
+        # Prevent cron_id rebinding to arbitrary scheduled actions
+        if 'cron_id' in vals:
+            raise AccessError(_(
+                "The scheduled action (cron_id) cannot be modified after creation. "
+                "This restriction prevents unauthorized modification of arbitrary scheduled actions."
+            ))
+        
         res = super().write(vals)
         if not CRON_DEPENDS.isdisjoint(vals):
             self._sync_cron()
         return res
 
     def unlink(self):
+        # Verify ownership before deleting crons with sudo()
+        for alert in self:
+            alert._verify_cron_ownership()
+        
         crons = self.cron_id.sudo()
         server_actions = crons.ir_actions_server_id
         res = super().unlink()
@@ -164,7 +201,9 @@ class LunchAlert(models.Model):
         if not self.available_today:
             _logger.warning("cancelled, not available today")
             if self.cron_id and self.until and fields.Date.context_today(self) > self.until:
-                self.cron_id.unlink()
+                # Verify ownership before deleting the cron
+                self._verify_cron_ownership()
+                self.cron_id.sudo().unlink()
                 self.cron_id = False
             return
 

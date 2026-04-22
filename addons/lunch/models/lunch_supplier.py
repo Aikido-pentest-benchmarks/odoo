@@ -8,7 +8,7 @@ from datetime import datetime, time, timedelta
 from textwrap import dedent
 
 from odoo import api, fields, models, _
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.fields import Domain
 from odoo.tools import float_round
 
@@ -118,6 +118,28 @@ class LunchSupplier(models.Model):
         'Automatic Email Sending Time should be between 0 and 12',
     )
 
+    def _verify_cron_ownership(self):
+        """Verify that the cron_id belongs to this supplier to prevent privilege escalation.
+        
+        This method checks that the cron's code references the current supplier record,
+        ensuring that a malicious user cannot rebind cron_id to an arbitrary ir.cron
+        and then modify or delete it through sudo() operations.
+        """
+        self.ensure_one()
+        if not self.cron_id:
+            return True
+        
+        # Check if the cron's code references this specific supplier record
+        expected_code_fragment = f"env['{self._name}'].browse([{self.id}])"
+        cron_code = self.cron_id.code or ''
+        
+        if expected_code_fragment not in cron_code:
+            raise AccessError(_(
+                "The scheduled action (cron) associated with this supplier does not belong to it. "
+                "Modifying or deleting arbitrary scheduled actions is not allowed."
+            ))
+        return True
+
     @api.depends('phone')
     def _compute_display_name(self):
         for supplier in self:
@@ -128,6 +150,9 @@ class LunchSupplier(models.Model):
 
     def _sync_cron(self):
         for supplier in self:
+            # Verify ownership before modifying the cron with sudo()
+            supplier._verify_cron_ownership()
+            
             supplier = supplier.with_context(tz=supplier.tz)
 
             sendat_tz = pytz.timezone(supplier.tz).localize(datetime.combine(
@@ -187,6 +212,13 @@ class LunchSupplier(models.Model):
         return suppliers
 
     def write(self, vals):
+        # Prevent cron_id rebinding to arbitrary scheduled actions
+        if 'cron_id' in vals:
+            raise AccessError(_(
+                "The scheduled action (cron_id) cannot be modified after creation. "
+                "This restriction prevents unauthorized modification of arbitrary scheduled actions."
+            ))
+        
         values = vals
         for topping in values.get('topping_ids_2', []):
             topping_values = topping[2] if len(topping) > 2 else False
@@ -216,6 +248,10 @@ class LunchSupplier(models.Model):
         return res
 
     def unlink(self):
+        # Verify ownership before deleting crons with sudo()
+        for supplier in self:
+            supplier._verify_cron_ownership()
+        
         crons = self.cron_id.sudo()
         server_actions = crons.ir_actions_server_id
         res = super().unlink()
