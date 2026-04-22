@@ -1030,16 +1030,29 @@ class IrActionsServer(models.Model):
             for field, new_value in res.items():
                 record_cached[field] = new_value
         elif self.update_path:
-            starting_record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
+            # Security: Use the validated record from eval_context instead of directly
+            # browsing by active_id to ensure access checks have been performed
+            if eval_context and eval_context.get('record'):
+                starting_record = eval_context['record']
+            else:
+                starting_record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
             path = self.update_path.split('.')
             target_records = reduce(getitem, path[:-1], starting_record)
             target_records.write(res)
 
     def _run_action_webhook(self, eval_context=None):
         """Send a post request with a read of the selected field on active_id."""
-        record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
+        # Security: Use the validated record from eval_context instead of directly
+        # browsing by active_id to ensure access checks have been performed
+        if eval_context and eval_context.get('record'):
+            record = eval_context['record']
+        else:
+            # Fallback for edge cases, but this should not normally happen
+            # as eval_context is always provided by run()
+            record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
+        
         url = self.webhook_url
-        if not record:
+        if not record or not record.id:
             return
         if not url:
             raise UserError(_("I'll be happy to send a webhook for you, but you really need to give me a URL to reach out to..."))
@@ -1086,7 +1099,12 @@ class IrActionsServer(models.Model):
         dupe = self.env[self.crud_model_id.model].browse(self.resource_ref.id).copy()
 
         if self.link_field_id:
-            record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
+            # Security: Use the validated record from eval_context instead of directly
+            # browsing by active_id to ensure access checks have been performed
+            if eval_context and eval_context.get('record'):
+                record = eval_context['record']
+            else:
+                record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
             if self.link_field_id.ttype in ['one2many', 'many2many']:
                 record.write({self.link_field_id.name: [Command.link(dupe.id)]})
             else:
@@ -1100,7 +1118,12 @@ class IrActionsServer(models.Model):
         res_id, _res_name = self.env[self.crud_model_id.model].name_create(self.value)
 
         if self.link_field_id:
-            record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
+            # Security: Use the validated record from eval_context instead of directly
+            # browsing by active_id to ensure access checks have been performed
+            if eval_context and eval_context.get('record'):
+                record = eval_context['record']
+            else:
+                record = self.env[self.model_id.model].browse(self.env.context.get('active_id'))
             if self.link_field_id.ttype in ['one2many', 'many2many']:
                 record.write({self.link_field_id.name: [Command.link(res_id)]})
             else:
@@ -1125,9 +1148,24 @@ class IrActionsServer(models.Model):
         model = self.env[model_name]
         record = None
         records = None
-        if self.env.context.get('active_model') == model_name and self.env.context.get('active_id'):
+        
+        # Security: Always validate active_model matches the action's model to prevent
+        # record-rule bypass via active_model confusion. When active_model is provided,
+        # it must match the action's model; otherwise, we cannot safely use active_id(s).
+        active_model = self.env.context.get('active_model')
+        if active_model and active_model != model_name:
+            # Reject mismatched active_model to prevent access control bypass
+            raise UserError(_(
+                "Security Error: The context's active_model (%(active_model)s) does not match "
+                "the server action's model (%(action_model)s). This action cannot be executed.",
+                active_model=active_model,
+                action_model=model_name
+            ))
+        
+        # Only populate record/records when active_model matches or is not provided
+        if self.env.context.get('active_id'):
             record = model.browse(self.env.context['active_id'])
-        if self.env.context.get('active_model') == model_name and self.env.context.get('active_ids'):
+        if self.env.context.get('active_ids'):
             records = model.browse(self.env.context['active_ids'])
         if self.env.context.get('onchange_self'):
             record = self.env.context['onchange_self']
