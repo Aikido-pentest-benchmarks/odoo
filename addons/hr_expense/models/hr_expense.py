@@ -1212,6 +1212,14 @@ class HrExpense(models.Model):
         self._check_can_reset_approval()
         self = self.with_context(clean_context(self.env.context))
         moves_sudo = self.sudo().account_move_id
+        # Validate that the linked moves actually belong to these expenses to prevent
+        # unauthorized deletion of arbitrary draft moves
+        invalid_moves = moves_sudo.filtered(lambda m: not (self & m.expense_ids))
+        if invalid_moves:
+            raise UserError(_(
+                "Cannot reset expenses: the linked journal entries do not belong to these expenses. "
+                "This may indicate data corruption or an unauthorized modification."
+            ))
         draft_moves_sudo = moves_sudo.filtered(lambda m: m.state == 'draft')
         non_draft_moves_sudo = moves_sudo - draft_moves_sudo
         non_draft_moves_sudo._reverse_moves(
@@ -1455,8 +1463,17 @@ class HrExpense(models.Model):
 
     def _do_refuse(self, reason):
         # Sudoed as approvers may not be accountants
-        draft_moves_sudo = self.sudo().account_move_id.filtered(lambda move: move.state == 'draft')
-        if self.sudo().account_move_id - draft_moves_sudo:
+        moves_sudo = self.sudo().account_move_id
+        # Validate that the linked moves actually belong to these expenses to prevent
+        # unauthorized deletion of arbitrary draft moves
+        invalid_moves = moves_sudo.filtered(lambda m: not (self & m.expense_ids))
+        if invalid_moves:
+            raise UserError(_(
+                "Cannot refuse expenses: the linked journal entries do not belong to these expenses. "
+                "This may indicate data corruption or an unauthorized modification."
+            ))
+        draft_moves_sudo = moves_sudo.filtered(lambda move: move.state == 'draft')
+        if moves_sudo - draft_moves_sudo:
             raise UserError(_("You cannot cancel an expense linked to a posted journal entry"))
 
         if draft_moves_sudo:
