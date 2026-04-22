@@ -124,6 +124,11 @@ class SnailmailLetter(models.Model):
         return letters
 
     def write(self, vals):
+        # Check access rights: users can only modify their own letters or if they're system admin
+        if not self.env.user.has_group('base.group_system'):
+            for letter in self:
+                if letter.user_id and letter.user_id != self.env.user:
+                    raise AccessError(_('You can only modify your own snailmail letters.'))
         res = super().write(vals)
         if 'attachment_id' in vals:
             self.attachment_id.check_access('read')
@@ -429,6 +434,11 @@ class SnailmailLetter(models.Model):
         self.message_id._notify_message_notification_update()
 
     def snailmail_print(self):
+        # Check access rights: users can only print their own letters or if they're system admin
+        if not self.env.user.has_group('base.group_system'):
+            for letter in self:
+                if letter.user_id and letter.user_id != self.env.user:
+                    raise AccessError(_('You can only print your own snailmail letters.'))
         self.write({'state': 'pending'})
         self.notification_ids.sudo().write({
             'notification_status': 'ready',
@@ -440,6 +450,11 @@ class SnailmailLetter(models.Model):
             self._snailmail_print()
 
     def cancel(self):
+        # Check access rights: users can only cancel their own letters or if they're system admin
+        if not self.env.user.has_group('base.group_system'):
+            for letter in self:
+                if letter.user_id and letter.user_id != self.env.user:
+                    raise AccessError(_('You can only cancel your own snailmail letters.'))
         self.write({'state': 'canceled', 'error_code': False})
         self.notification_ids.sudo().write({
             'notification_status': 'canceled',

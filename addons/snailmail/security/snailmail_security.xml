@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <data>
+        <!-- Multi-company rule: Users can only access letters from their allowed companies -->
+        <record id="snailmail_letter_company_rule" model="ir.rule">
+            <field name="name">Snailmail Letter: multi-company</field>
+            <field name="model_id" ref="model_snailmail_letter"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <!-- User ownership rule: Regular users can only access their own letters -->
+        <record id="snailmail_letter_user_rule" model="ir.rule">
+            <field name="name">Snailmail Letter: user access own letters</field>
+            <field name="model_id" ref="model_snailmail_letter"/>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="domain_force">['|', ('user_id', '=', user.id), ('user_id', '=', False)]</field>
+        </record>
+
+        <!-- System admin rule: System administrators have full access -->
+        <record id="snailmail_letter_system_rule" model="ir.rule">
+            <field name="name">Snailmail Letter: system admin full access</field>
+            <field name="model_id" ref="model_snailmail_letter"/>
+            <field name="groups" eval="[(4, ref('base.group_system'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+    </data>
+</odoo>
