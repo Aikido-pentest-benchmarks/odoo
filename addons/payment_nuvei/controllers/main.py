@@ -10,6 +10,7 @@ from odoo.tools import consteq
 
 from odoo.addons.payment import utils as payment_utils
 from odoo.addons.payment.logging import get_payment_logger
+from odoo.addons.payment_nuvei import const
 
 
 _logger = get_payment_logger(__name__)
@@ -70,13 +71,32 @@ class NuveiController(http.Controller):
         :return: None
         :raise Forbidden: If the signatures don't match.
         """
-        if error_access_token:  # The access token is not included when the payment goes through.
-            # Verify the request based on the provided access token.
+        # Extract the payment status to determine if this is a success or error/cancel flow.
+        status = payment_data.get('Status') or payment_data.get('ppp_status')
+        if status:
+            status = status.lower()
+        
+        # Determine if the payment status indicates success.
+        is_success_status = status in const.PAYMENT_STATUS_MAPPING.get('done', ())
+        
+        if error_access_token:
+            # The error_access_token is only valid for error, cancel, or pending flows.
+            # It must NOT be accepted for success flows to prevent payment forgery.
+            if is_success_status:
+                _logger.warning(
+                    "Received payment data with success status but error_access_token present. "
+                    "This indicates a potential forgery attempt. Transaction: %s",
+                    tx_sudo.reference
+                )
+                raise Forbidden()
+            
+            # Verify the request based on the provided access token for non-success flows.
             ref = tx_sudo.reference
             if not payment_utils.check_access_token(error_access_token, ref):
                 _logger.warning("Received cancel/error with invalid access token.")
                 raise Forbidden()
-        else:  # The payment went through.
+        else:
+            # When no error_access_token is present, require provider checksum verification.
             received_signature = payment_data.get('advanceResponseChecksum')
             if not received_signature:
                 _logger.warning("Received payment data with missing signature")
