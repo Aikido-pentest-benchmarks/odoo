@@ -885,6 +885,31 @@ class AccountPayment(models.Model):
     # LOW-LEVEL METHODS
     # -------------------------------------------------------------------------
 
+    def _sanitize_line_ids_commands(self, line_ids):
+        """
+        Sanitize line_ids commands to prevent tampering with existing posted move lines.
+        Only allow CREATE commands to ensure new records are created rather than
+        modifying existing account.move.line records.
+        
+        :param line_ids: List of x2many commands for line_ids
+        :return: Sanitized list containing only safe CREATE commands
+        """
+        if not line_ids:
+            return line_ids
+        
+        sanitized_commands = []
+        for command in line_ids:
+            if not isinstance(command, (list, tuple)) or len(command) < 1:
+                continue
+            
+            command_type = command[0]
+            # Only allow CREATE commands (0) to prevent modification of existing records
+            # Reject UPDATE (1), DELETE (2), UNLINK (3), LINK (4), CLEAR (5), and SET (6)
+            if command_type == Command.CREATE:
+                sanitized_commands.append(command)
+        
+        return sanitized_commands
+
     @api.model_create_multi
     def create(self, vals_list):
         # OVERRIDE
@@ -901,7 +926,9 @@ class AccountPayment(models.Model):
             force_balance_vals_list.append(vals.pop('force_balance', None))
 
             # Hack to add a custom line.
-            linecomplete_line_vals_list.append(vals.pop('line_ids', None))
+            # Sanitize line_ids to prevent tampering with existing posted move lines
+            raw_line_ids = vals.pop('line_ids', None)
+            linecomplete_line_vals_list.append(self._sanitize_line_ids_commands(raw_line_ids))
 
         payments = super().create(vals_list)
 
