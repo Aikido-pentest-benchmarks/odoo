@@ -66,6 +66,10 @@ _UNSAFE_ATTRIBUTES = [
     'cr_await', 'cr_code', 'cr_frame',
     # Coroutine generators
     'ag_await', 'ag_code', 'ag_frame',
+    # Odoo privileged objects that provide access to dangerous operations
+    'env',  # Environment object exposes database cursor via env.cr
+    'cr',   # Database cursor can execute arbitrary SQL
+    'registry',  # Registry provides access to all models
 ]
 
 
@@ -429,13 +433,63 @@ def test_python_expr(expr, mode="eval"):
 
 
 def check_values(d):
+    """Validate that context values are safe for use in safe_eval.
+    
+    This function checks that the provided context dictionary does not contain
+    dangerous objects that could be used to bypass the sandbox, such as:
+    - Module objects
+    - Database cursors (which can execute arbitrary SQL)
+    - Environment objects (which expose database cursors)
+    - Registry objects (which provide access to models and database)
+    
+    Note: Model records (BaseModel instances) are allowed in the context for
+    backwards compatibility, but access to their 'env', 'cr', and 'registry'
+    attributes is blocked via _UNSAFE_ATTRIBUTES.
+    
+    :param d: context dictionary to validate
+    :type d: dict or None
+    :return: the validated context dictionary
+    :raises TypeError: if dangerous objects are found in the context
+    """
     if not d:
         return d
-    for v in d.values():
-        if isinstance(v, types.ModuleType):
-            raise TypeError(f"""Module {v} can not be used in evaluation contexts
+    
+    # Import here to avoid circular dependencies
+    from odoo.sql_db import BaseCursor
+    
+    # Define dangerous types that should never be passed to safe_eval
+    # These types provide access to privileged operations or can bypass the sandbox
+    _DANGEROUS_TYPES = (
+        types.ModuleType,  # Modules can provide access to arbitrary code
+        BaseCursor,        # Database cursors can execute arbitrary SQL
+    )
+    
+    # Check for Environment and Registry types if they're available
+    # (they may not be during early initialization)
+    try:
+        from odoo.orm.environments import Environment
+        _DANGEROUS_TYPES = _DANGEROUS_TYPES + (Environment,)
+    except ImportError:
+        pass
+    
+    try:
+        from odoo.orm.registry import Registry
+        _DANGEROUS_TYPES = _DANGEROUS_TYPES + (Registry,)
+    except ImportError:
+        pass
+    
+    def _check_value(v, path=""):
+        """Recursively check a value for dangerous types."""
+        if isinstance(v, _DANGEROUS_TYPES):
+            type_name = type(v).__name__
+            raise TypeError(f"""Unsafe object of type {type_name} can not be used in evaluation contexts{path}
 
-Prefer providing only the items necessary for your intended use.
+Objects of type {type_name} provide access to privileged operations that could be used
+to bypass the safe_eval sandbox and execute arbitrary code or SQL queries.
+
+Prefer providing only the specific, safe values necessary for your intended use.
+For example, instead of passing an Environment or cursor object, pass only the specific
+attributes needed such as env.uid, env.context, or extract values from the cursor result.
 
 If a "module" is necessary for backwards compatibility, use
 `odoo.tools.safe_eval.wrap_module` to generate a wrapper recursively
@@ -443,6 +497,18 @@ whitelisting allowed attributes.
 
 Pre-wrapped modules are provided as attributes of `odoo.tools.safe_eval`.
 """)
+        
+        # Recursively check collections
+        if isinstance(v, dict):
+            for key, val in v.items():
+                _check_value(val, f"{path}[{key!r}]")
+        elif isinstance(v, (list, tuple, set)):
+            for idx, val in enumerate(v):
+                _check_value(val, f"{path}[{idx}]")
+    
+    for key, value in d.items():
+        _check_value(value, f" at key {key!r}")
+    
     return d
 
 class wrap_module:
