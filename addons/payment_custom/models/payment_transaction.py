@@ -2,6 +2,7 @@
 
 from odoo import _, models
 
+from odoo.addons.payment import utils as payment_utils
 from odoo.addons.payment.logging import get_payment_logger
 from odoo.addons.payment_custom.controllers.main import CustomController
 
@@ -24,9 +25,15 @@ class PaymentTransaction(models.Model):
         if self.provider_code != 'custom':
             return super()._get_specific_rendering_values(processing_values)
 
+        # Generate an access token to validate the callback authenticity
+        access_token = payment_utils.generate_access_token(
+            self.reference, self.amount, self.currency_id.id, self.partner_id.id
+        )
+
         return {
             'api_url': CustomController._process_url,
             'reference': self.reference,
+            'access_token': access_token,
         }
 
     def _get_communication(self):
@@ -57,6 +64,22 @@ class PaymentTransaction(models.Model):
         """Override of `payment` to update the transaction based on the payment data."""
         if self.provider_code != 'custom':
             return super()._apply_updates(payment_data)
+
+        # Validate the access token to ensure the callback is authentic
+        access_token = payment_data.get('access_token')
+        if not payment_utils.check_access_token(
+            access_token, self.reference, self.amount, self.currency_id.id, self.partner_id.id
+        ):
+            _logger.warning(
+                "Received custom payment callback with invalid access token for transaction %s",
+                self.reference
+            )
+            error_msg = _(
+                "The payment notification could not be authenticated. "
+                "Please contact us if the problem persists."
+            )
+            self._set_error(error_msg)
+            return
 
         _logger.info(
             "Validated custom payment for transaction %s: set as pending.", self.reference
