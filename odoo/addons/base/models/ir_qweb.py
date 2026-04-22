@@ -485,6 +485,9 @@ ETREE_TEMPLATE_REF = count()
 # Only allow a javascript scheme if it is followed by [ ][window.]history.back()
 MALICIOUS_SCHEMES = re.compile(r'javascript:(?!( ?)((window\.)?)history\.back\(\)$)', re.I).findall
 
+# Pattern to detect event handler attributes (e.g., onclick, onerror, onload, etc.)
+EVENT_HANDLER_ATTRIBUTES = re.compile(r'^on[a-z]+$', re.I)
+
 
 def _id_or_xmlid(ref):
     try:
@@ -2709,8 +2712,16 @@ class IrQweb(models.AbstractModel):
 
             @returns dict
         """
+        # Remove malicious href schemes
         if not atts.pop('__is_static_node', False) and (href := atts.get('href')) and MALICIOUS_SCHEMES(str(href)):
             atts['href'] = ""
+        
+        # Remove event handler attributes to prevent XSS attacks
+        # Event handlers like onclick, onerror, onload, etc. can execute arbitrary JavaScript
+        attrs_to_remove = [attr for attr in atts if EVENT_HANDLER_ATTRIBUTES.match(attr)]
+        for attr in attrs_to_remove:
+            del atts[attr]
+        
         return atts
 
     def _get_field(self, record, field_name, expression, tagName, field_options, values):
