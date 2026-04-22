@@ -88,3 +88,52 @@ class TestProcessingFlows(NuveiCommon):
         tx = self._create_transaction('redirect')
         payload = dict(self.payment_data, advanceResponseChecksum='dummy')
         self.assertRaises(Forbidden, NuveiController._verify_signature, tx, payload)
+
+    @mute_logger('odoo.addons.payment_nuvei.controllers.main')
+    def test_reject_success_status_with_error_access_token(self):
+        """ Test that a success status with error_access_token is rejected to prevent forgery. """
+        tx = self._create_transaction('redirect')
+        # Attempt to forge a successful payment using error_access_token
+        payload = dict(self.payment_data, Status='APPROVED')
+        error_token = self._generate_test_access_token(tx.reference)
+        self.assertRaises(
+            Forbidden, NuveiController._verify_signature, tx, payload, error_access_token=error_token
+        )
+
+    @mute_logger('odoo.addons.payment_nuvei.controllers.main')
+    def test_reject_ok_status_with_error_access_token(self):
+        """ Test that an 'ok' status with error_access_token is rejected to prevent forgery. """
+        tx = self._create_transaction('redirect')
+        # Attempt to forge a successful payment using error_access_token with 'ok' status
+        payload = dict(self.payment_data, ppp_status='ok')
+        error_token = self._generate_test_access_token(tx.reference)
+        self.assertRaises(
+            Forbidden, NuveiController._verify_signature, tx, payload, error_access_token=error_token
+        )
+
+    def test_accept_error_status_with_valid_error_access_token(self):
+        """ Test that an error status with valid error_access_token is accepted. """
+        tx = self._create_transaction('redirect')
+        payload = {'Status': 'ERROR', 'Reason': 'Payment declined'}
+        error_token = self._generate_test_access_token(tx.reference)
+        self._assert_does_not_raise(
+            Forbidden, NuveiController._verify_signature, tx, payload, error_access_token=error_token
+        )
+
+    def test_accept_pending_status_with_valid_error_access_token(self):
+        """ Test that a pending status with valid error_access_token is accepted. """
+        tx = self._create_transaction('redirect')
+        payload = {'Status': 'PENDING'}
+        error_token = self._generate_test_access_token(tx.reference)
+        self._assert_does_not_raise(
+            Forbidden, NuveiController._verify_signature, tx, payload, error_access_token=error_token
+        )
+
+    @mute_logger('odoo.addons.payment_nuvei.controllers.main')
+    def test_reject_error_status_with_invalid_error_access_token(self):
+        """ Test that an error status with invalid error_access_token is rejected. """
+        tx = self._create_transaction('redirect')
+        payload = {'Status': 'ERROR', 'Reason': 'Payment declined'}
+        self.assertRaises(
+            Forbidden, NuveiController._verify_signature, tx, payload, error_access_token='invalid'
+        )
