@@ -160,7 +160,9 @@ class DiscussChannelRtcSession(models.Model):
         payload_by_target = defaultdict(lambda: {'sender': self.id, 'notifications': []})
         for target_session_ids, content in notifications:
             for target_session in self.env['discuss.channel.rtc.session'].browse(target_session_ids).exists():
-                payload_by_target[target_session]['notifications'].append(content)
+                # Only allow notifications to sessions in the same channel to prevent cross-channel injection
+                if target_session.channel_id == self.channel_id:
+                    payload_by_target[target_session]['notifications'].append(content)
         for target, payload in payload_by_target.items():
             target._bus_send("discuss.channel.rtc.session/peer_notification", payload)
 
