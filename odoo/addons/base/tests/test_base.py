@@ -132,6 +132,76 @@ class TestSafeEval(BaseCase):
         with self.assertRaises(NameError):
             safe_eval("self.__name__", {'self': self}, mode="exec")
 
+    def test_06_safe_eval_blocks_privileged_objects(self):
+        """ Verify that privileged objects cannot be passed to safe_eval """
+        from odoo.sql_db import BaseCursor
+        from odoo.orm.environments import Environment
+        from odoo.orm.registry import Registry
+        from unittest.mock import Mock
+        
+        # Block database cursors
+        mock_cursor = Mock(spec=BaseCursor)
+        with self.assertRaises(TypeError) as cm:
+            safe_eval("1 + 1", {'cr': mock_cursor})
+        self.assertIn('BaseCursor', str(cm.exception))
+        self.assertIn('privileged operations', str(cm.exception))
+        
+        # Block Environment objects
+        mock_env = Mock(spec=Environment)
+        with self.assertRaises(TypeError) as cm:
+            safe_eval("1 + 1", {'env': mock_env})
+        self.assertIn('Environment', str(cm.exception))
+        
+        # Block Registry objects
+        mock_registry = Mock(spec=Registry)
+        with self.assertRaises(TypeError) as cm:
+            safe_eval("1 + 1", {'registry': mock_registry})
+        self.assertIn('Registry', str(cm.exception))
+        
+        # Block access to 'env' attribute (even if object is passed)
+        mock_obj = Mock()
+        mock_obj.env = Mock(spec=Environment)
+        with self.assertRaises(NameError) as cm:
+            safe_eval("obj.env", {'obj': mock_obj})
+        self.assertIn('env', str(cm.exception))
+        
+        # Block access to 'cr' attribute
+        mock_obj2 = Mock()
+        mock_obj2.cr = Mock(spec=BaseCursor)
+        with self.assertRaises(NameError) as cm:
+            safe_eval("obj.cr", {'obj': mock_obj2})
+        self.assertIn('cr', str(cm.exception))
+        
+        # Block access to 'registry' attribute
+        mock_obj3 = Mock()
+        mock_obj3.registry = Mock(spec=Registry)
+        with self.assertRaises(NameError) as cm:
+            safe_eval("obj.registry", {'obj': mock_obj3})
+        self.assertIn('registry', str(cm.exception))
+        
+        # Block nested dangerous objects in dict
+        with self.assertRaises(TypeError) as cm:
+            safe_eval("1 + 1", {'data': {'nested_cr': mock_cursor}})
+        self.assertIn('BaseCursor', str(cm.exception))
+        self.assertIn("'nested_cr'", str(cm.exception))
+        
+        # Block nested dangerous objects in list
+        with self.assertRaises(TypeError) as cm:
+            safe_eval("1 + 1", {'items': [1, 2, mock_cursor]})
+        self.assertIn('BaseCursor', str(cm.exception))
+        
+        # Verify safe values still work
+        result = safe_eval("uid + 1", {'uid': 5})
+        self.assertEqual(result, 6)
+        
+        # Verify safe attribute access still works
+        mock_safe_obj = Mock()
+        mock_safe_obj.name = "test"
+        mock_safe_obj.id = 42
+        result = safe_eval("obj.name + str(obj.id)", {'obj': mock_safe_obj})
+        self.assertEqual(result, "test42")
+
+
 
 class TestParentStore(TransactionCase):
     """ Verify that parent_store computation is done right """
