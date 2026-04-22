@@ -7,6 +7,7 @@ from freezegun import freeze_time
 from unittest.mock import patch
 
 from odoo import fields
+from odoo.exceptions import AccessError
 from odoo.tests import common
 
 from odoo.addons.lunch.tests.common import TestsCommon
@@ -276,3 +277,78 @@ env['lunch.supplier'].browse([{self.supplier_kothai.id}])._send_auto_email()""")
             'supplier_id': self.supplier_pizza_inn.id,
         })
         self.assertTrue(order.available_on_date)
+
+    @common.users('cle-lunch-manager')
+    def test_cron_rebinding_prevention(self):
+        """Test that cron_id cannot be rebound to arbitrary scheduled actions."""
+        # Create an arbitrary cron that doesn't belong to this supplier
+        arbitrary_cron = self.env['ir.cron'].sudo().create({
+            'name': 'Arbitrary Cron',
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'state': 'code',
+            'code': 'model.search([])',
+            'interval_type': 'days',
+            'interval_number': 1,
+        })
+
+        # Attempt to rebind cron_id should fail
+        with self.assertRaises(AccessError, msg="Should not allow cron_id rebinding"):
+            self.supplier_kothai.write({'cron_id': arbitrary_cron.id})
+
+        # Verify the original cron is still associated
+        self.assertNotEqual(self.supplier_kothai.cron_id.id, arbitrary_cron.id)
+
+    @common.users('cle-lunch-manager')
+    def test_cron_ownership_verification_on_sync(self):
+        """Test that _sync_cron verifies ownership before modifying cron."""
+        # Store the original cron
+        original_cron = self.supplier_kothai.cron_id
+
+        # Create an arbitrary cron
+        arbitrary_cron = self.env['ir.cron'].sudo().create({
+            'name': 'Arbitrary Cron',
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'state': 'code',
+            'code': 'model.search([])',
+            'interval_type': 'days',
+            'interval_number': 1,
+        })
+
+        # Bypass write protection by using SQL to rebind cron_id
+        self.env.cr.execute(
+            "UPDATE lunch_supplier SET cron_id = %s WHERE id = %s",
+            (arbitrary_cron.id, self.supplier_kothai.id)
+        )
+        self.supplier_kothai.invalidate_recordset(['cron_id'])
+
+        # Attempt to sync should fail due to ownership verification
+        with self.assertRaises(AccessError, msg="Should detect cron ownership mismatch"):
+            self.supplier_kothai._sync_cron()
+
+    @common.users('cle-lunch-manager')
+    def test_cron_ownership_verification_on_unlink(self):
+        """Test that unlink verifies ownership before deleting cron."""
+        # Create an arbitrary cron
+        arbitrary_cron = self.env['ir.cron'].sudo().create({
+            'name': 'Arbitrary Cron',
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'state': 'code',
+            'code': 'model.search([])',
+            'interval_type': 'days',
+            'interval_number': 1,
+        })
+
+        # Bypass write protection by using SQL to rebind cron_id
+        self.env.cr.execute(
+            "UPDATE lunch_supplier SET cron_id = %s WHERE id = %s",
+            (arbitrary_cron.id, self.supplier_kothai.id)
+        )
+        self.supplier_kothai.invalidate_recordset(['cron_id'])
+
+        # Attempt to delete should fail due to ownership verification
+        with self.assertRaises(AccessError, msg="Should detect cron ownership mismatch"):
+            self.supplier_kothai.unlink()
+
+        # Verify the arbitrary cron still exists
+        self.assertTrue(arbitrary_cron.exists())
+
