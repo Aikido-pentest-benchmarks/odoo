@@ -2,5 +2,6 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
 from . import ir_http
+from . import mail_plugin_auth_code
 from . import res_partner
 from . import res_partner_iap
