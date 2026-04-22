@@ -12,11 +12,12 @@ Allows users to send documents by post
         'mail'
     ],
     'data': [
+        'security/snailmail_security.xml',
+        'security/ir.model.access.csv',
         'data/iap_service_data.xml',
         'data/snailmail_data.xml',
         'views/report_assets.xml',
         'views/snailmail_views.xml',
-        'security/ir.model.access.csv',
     ],
     'auto_install': True,
     'assets': {
